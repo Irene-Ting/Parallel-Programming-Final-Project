@@ -5,6 +5,7 @@
 #include <math.h>
 #include <png.h>
 #include "dbscan.h"
+#define CAL_TIME
 
 int read_png(const char* filename, unsigned char** image, unsigned* height, 
              unsigned* width, unsigned* channels) {
@@ -106,9 +107,29 @@ int main(int argc, char** argv) {
         }
     }
     
+    #ifdef CAL_TIME
+    struct timespec start, end, temp;
+    double time_used;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    #endif
+
     DBSCAN dbscan(eps, minPts);
     int* cluster_label = new int[num_of_pixels];
     cluster_label = dbscan.cluster(num_of_pixels, dimension, graph);
+
+    #ifdef CAL_TIME
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    if ((end.tv_nsec - start.tv_nsec) < 0) {
+        temp.tv_sec = end.tv_sec-start.tv_sec-1;
+        temp.tv_nsec = 1000000000 + end.tv_nsec - start.tv_nsec;
+    } else {
+        temp.tv_sec = end.tv_sec - start.tv_sec;
+        temp.tv_nsec = end.tv_nsec - start.tv_nsec;
+    }
+    time_used = temp.tv_sec + (double) temp.tv_nsec / 1000000000.0;
+    
+    printf("%f second\n", time_used);
+    #endif
 
     // dbscan.print_adjacency_lists();
     // dbscan.print_cluster();

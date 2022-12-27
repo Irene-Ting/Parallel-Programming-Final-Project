@@ -3,6 +3,7 @@
 #include <iostream>
 #include <queue>
 #include "dbscan.h"
+// #define DEBUG
 
 bool
 DBSCAN::is_neighbor(int a, int b) {
@@ -83,15 +84,36 @@ DBSCAN::set_cluster_color() {
     }
 }
 
-float 
-DBSCAN::cal_distance(int* a, int* b) {
+bool  
+DBSCAN::is_close(int* a, int* b) {
     float sum = 0;
+    int eps_square = eps * eps;
     for (int i = 0; i < dimension; i++) {
-        sum += (a[i] - b[i])*(a[i] - b[i]);
+        int diff = a[i] - b[i];
+        if (diff >= eps) {
+            return false;
+        }
+        sum += diff * diff;
+        if (diff >= eps_square) {
+            return false;
+        }
     }
-    float ans = sqrt(sum);
-    // std::cout << ans << " ";
-    return ans;
+    return sqrt(sum) < eps;
+}
+
+void
+DBSCAN::constuct_neighbor(int** raw_vertices) {
+    for (int i = 0; i < num_of_vertices; i++) {
+        #ifdef DEBUG
+        std::cout << i << " / " << num_of_vertices << "\n";
+        #endif
+        for (int j = 0; j < num_of_vertices; j++) {
+            if (i == j) continue;
+            if (is_close(raw_vertices[i], raw_vertices[j])) {
+                vertices[i].neighbors.push_back(j);
+            }
+        }
+    }
 }
 
 int*
@@ -99,24 +121,21 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
     num_of_vertices = v;
     dimension = d;
     vertices = new vertex[num_of_vertices];
+    constuct_neighbor(raw_vertices);
 
     for (int i = 0; i < num_of_vertices; i++) {
-        int cnt = 0;
-        for (int j = 0; j < num_of_vertices; j++) {
-            if (i == j) continue;
-            if (cal_distance(raw_vertices[i], raw_vertices[j]) < eps) {
-                vertices[i].neighbors.push_back(j);
-                cnt++;
-            }
-        }
-        if (cnt > minPts) {
+        int pts = vertices[i].neighbors.size();
+        if (pts > minPts) {
             vertices[i].type = Core;
-        } else if (cnt == 0) {
+        } else if (pts == 0) {
             vertices[i].type = Noise;
         }
     }
     int cluster_id = 0;
     for (int i = 0; i < num_of_vertices; i++) {
+        #ifdef DEBUG
+        std::cout << i << " / " << num_of_vertices << "\n";
+        #endif
         if (!vertices[i].visited && vertices[i].type == Core) {
             vertices[i].cluster = cluster_id;
             BFS(i);

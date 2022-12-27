@@ -16,13 +16,13 @@ class DBSCAN{
         int num_of_vertices;
         int dimension;
         vertex* vertices; // vertices representation
-        std::vector<std::vector<int>> adjacency_lists;
         int* colors; // cluster id -> vertex id
         int num_of_cluster;
         int* cluster_label; // cluster id of each vertex
         
         bool is_neighbor(int, int);
-        float cal_distance(int*, int*);
+        bool is_close(int*, int*);
+        void constuct_neighbor(int**);
         void BFS(int id);
         void set_cluster_label();
         void set_cluster_color();
