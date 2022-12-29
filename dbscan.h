@@ -1,8 +1,11 @@
 #include <vector>
+#include <string.h>
+typedef struct graph {
+    int num_of_vertices = 0;
+    int num_of_edges = 0;
+    int *edge, *edge_pos, *degree;
+} graph;
 
-typedef struct vertex {
-    std::vector<int> neighbors;
-} vertex;
 class DBSCAN{
     private:
         float eps;
@@ -11,7 +14,7 @@ class DBSCAN{
         int num_of_vertices;
         int num_of_edges;
         int dimension;
-        vertex* vertices; // vertices representation
+        // vertex* vertices; // vertices representation
         int* colors; // cluster id -> vertex id
         int num_of_cluster;
 
@@ -22,20 +25,23 @@ class DBSCAN{
         bool *d_is_core, *d_frontier, *d_done;
         
         bool is_neighbor(int, int);
-        bool is_close(int*, int*);
-        void constuct_neighbor(int**);
+        // bool is_close(int*, int*);
         void BFS(int, int);
         void set_cluster_color();
 
     public:
         DBSCAN(float e, int mp) { eps = e, minPts = mp; };
         ~DBSCAN() { }; 				
-        int* cluster(int num_of_vertices, int dimension, int** raw_vertices);
+        int* cluster(graph);
         int* get_colors() { return colors; };
-        void print_cluster(); // debug
-        void print_adjacency_lists(); // debug
+        // debug
+        void print_cluster(); 
         void print_degree();
         void print_edge_pos();
         void print_edge();
         void print_type();
 };
+
+bool is_close(int* a, int* b, int dimension, int eps);
+graph constuct_neighbor_pts(int num_of_vertices, int dimension, int** raw_vertices, int eps);
+graph constuct_neighbor_img(unsigned char* img, int channels, int width, int height, int eps);

@@ -90,23 +90,6 @@ int main(int argc, char** argv) {
     unsigned char* img = NULL;
     read_png(inputfile, &img, &height, &width, &channels);
 
-    int num_of_pixels = height * width;
-    int dimension = 5;
-    int** graph = new int *[num_of_pixels];
-    for (int i = 0; i < num_of_pixels; i++) {
-        graph[i] = new int[dimension];
-    }
-
-    for (int i = 0; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            graph[i * width + j][0] = img[channels * (width * i + j) + 0];
-            graph[i * width + j][1] = img[channels * (width * i + j) + 1];
-            graph[i * width + j][2] = img[channels * (width * i + j) + 2];
-            graph[i * width + j][3] = i;
-            graph[i * width + j][4] = j;
-        }
-    }
-    
     #ifdef CAL_TIME
     struct timespec start, end, temp;
     double time_used;
@@ -114,8 +97,9 @@ int main(int argc, char** argv) {
     #endif
 
     DBSCAN dbscan(eps, minPts);
-    int* cluster_label = new int[num_of_pixels];
-    cluster_label = dbscan.cluster(num_of_pixels, dimension, graph);
+    int* cluster_label = new int[height * width];
+    graph neighbor = constuct_neighbor_img(img, channels, width, height, eps);
+    cluster_label = dbscan.cluster(neighbor);
 
     #ifdef CAL_TIME
     clock_gettime(CLOCK_MONOTONIC, &end);

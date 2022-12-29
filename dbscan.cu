@@ -7,16 +7,6 @@
 #define BS 1024
 // #define DEBUG
 
-bool
-DBSCAN::is_neighbor(int a, int b) {
-    for (auto n : vertices[a].neighbors) {
-        if (n == b) {
-            return true;
-        }
-    }
-    return false;
-}
-
 __global__ void bfs(int *edge, int *edge_pos, int *degree, bool *is_core, bool *frontier, int *cluster_label, int cluster_id, bool *done, int num_of_vertices) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -42,20 +32,9 @@ DBSCAN::BFS(int id, int cluster_id) {
     cudaMemcpy(d_frontier, frontier, sizeof(bool) * num_of_vertices, cudaMemcpyHostToDevice); 
     while (!(*done)) {
         *done = true;
-        cudaMemcpy(d_done, &done, sizeof(bool), cudaMemcpyHostToDevice); 
+        cudaMemcpy(d_done, done, sizeof(bool), cudaMemcpyHostToDevice); 
         bfs<<<(num_of_vertices+BS-1)/BS, BS>>>(d_edge, d_edge_pos, d_degree, d_is_core, d_frontier, d_cluster_label, cluster_id, d_done, num_of_vertices);
         cudaMemcpy(done, d_done, sizeof(bool), cudaMemcpyDeviceToHost);
-    }
-}
-
-void 
-DBSCAN::print_adjacency_lists() {
-    for (int i = 0; i < num_of_vertices; i++) {
-        std::cout << "vertex " << i << ": ";
-        for (auto n : vertices[i].neighbors) {
-            std::cout << n << " ";
-        }
-        std::cout << std::endl;
     }
 }
 
@@ -117,72 +96,53 @@ DBSCAN::set_cluster_color() {
     }
 }
 
-bool  
-DBSCAN::is_close(int* a, int* b) {
-    float sum = 0;
-    int eps_square = eps * eps;
-    for (int i = 0; i < dimension; i++) {
-        int diff = a[i] - b[i];
-        if (diff > eps) {
-            return false;
-        }
-        sum += diff * diff;
-        if (diff > eps_square) {
-            return false;
-        }
-    }
-    return sqrt(sum) <= eps;
-}
+// bool  
+// DBSCAN::is_close(int* a, int* b) {
+//     float sum = 0;
+//     int eps_square = eps * eps;
+//     for (int i = 0; i < dimension; i++) {
+//         int diff = a[i] - b[i];
+//         if (diff > eps) {
+//             return false;
+//         }
+//         sum += diff * diff;
+//         if (diff > eps_square) {
+//             return false;
+//         }
+//     }
+//     return sqrt(sum) <= eps;
+// }
 
-void
-DBSCAN::constuct_neighbor(int** raw_vertices) {
-    for (int i = 0; i < num_of_vertices; i++) {
-        #ifdef DEBUG
-        std::cout << "constuct_neighbor: " << i << " / " << num_of_vertices << std::endl;
-        #endif
-        for (int j = 0; j < num_of_vertices; j++) {
-            if (i == j) continue;
-            if (is_close(raw_vertices[i], raw_vertices[j])) {
-                vertices[i].neighbors.push_back(j);
-                degree[i]++;
-            }
-        }
-    }
-}
+// void
+// DBSCAN::constuct_neighbor(int** raw_vertices) {
+//     for (int i = 0; i < num_of_vertices; i++) {
+//         #ifdef DEBUG
+//         std::cout << "constuct_neighbor: " << i << " / " << num_of_vertices << std::endl;
+//         #endif
+//         for (int j = 0; j < num_of_vertices; j++) {
+//             if (i == j) continue;
+//             if (is_close(raw_vertices[i], raw_vertices[j])) {
+//                 vertices[i].neighbors.push_back(j);
+//                 degree[i]++;
+//             }
+//         }
+//     }
+// }
 
 int*
-DBSCAN::cluster(int v, int d, int** raw_vertices) {
-    num_of_vertices = v;
-    dimension = d;
-    vertices = new vertex[num_of_vertices];
-    edge_pos = new int[num_of_vertices];
-    degree = new int[num_of_vertices];
-    memset(degree, 0, num_of_vertices);
+DBSCAN::cluster(graph neighbors) {
+    num_of_vertices = neighbors.num_of_vertices;
+    num_of_edges = neighbors.num_of_edges;
+    edge_pos = neighbors.edge_pos;
+    degree = neighbors.degree;
+    edge = neighbors.edge;
+
     is_core = new bool[num_of_vertices];
     frontier = new bool[num_of_vertices];
     cluster_label = new int[num_of_vertices];
     memset(cluster_label, -1, sizeof(int) * num_of_vertices);
     done = new bool;
-
-    constuct_neighbor(raw_vertices);
     
-    num_of_edges = 0;
-    for (int i = 0; i < num_of_vertices; i++) {
-        num_of_edges += degree[i];
-        if (i > 0) {
-            edge_pos[i] = edge_pos[i-1] + degree[i-1];
-        } else {
-            edge_pos[i] = 0;
-        }
-    }
-
-    edge = new int[num_of_edges];
-    for (int i = 0; i < num_of_vertices; i++) {
-        for (int j = 0; j < vertices[i].neighbors.size(); j++) {
-            edge[edge_pos[i] + j] = vertices[i].neighbors[j];
-        }
-    }
-
     for (int i = 0; i < num_of_vertices; i++) {
         int pts = degree[i];
         if (pts > minPts) {
@@ -212,7 +172,7 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
         #endif
         if (cluster_label[i] == -1 && is_core[i]) {
             #ifdef DEBUG
-            std::cout << "BFS(" << i << ", " << cluster_id << ")\n";
+            std::cout << "BFS(" << i << ", " << cluster_id << ")" << std::endl;
             #endif
             BFS(i, cluster_id);
             cluster_id += 1;
@@ -222,3 +182,122 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
     set_cluster_color();
     return cluster_label;
 }
+
+bool is_close(int* a, int* b, int dimension, int eps) {
+    float sum = 0;
+    int eps_square = eps * eps;
+    for (int i = 0; i < dimension; i++) {
+        int diff = a[i] - b[i];
+        if (diff > eps) {
+            return false;
+        }
+        sum += diff * diff;
+        if (diff > eps_square) {
+            return false;
+        }
+    }
+    return sqrt(sum) <= eps;
+}
+
+graph constuct_neighbor_pts(int num_of_vertices, int dimension, int** raw_vertices, int eps) {
+    graph neighbor;
+    neighbor.num_of_vertices = num_of_vertices;
+    neighbor.edge_pos = new int[num_of_vertices];
+    neighbor.degree = new int[num_of_vertices];
+    memset(neighbor.degree, 0, sizeof(int) * num_of_vertices);
+    std::vector<std::vector<int>> vertices(num_of_vertices);
+    
+    for (int i = 0; i < num_of_vertices; i++) {
+        #ifdef DEBUG
+        std::cout << "constuct_neighbor: " << i << " / " << num_of_vertices << std::endl;
+        #endif
+        for (int j = 0; j < num_of_vertices; j++) {
+            if (i == j) continue;
+            if (is_close(raw_vertices[i], raw_vertices[j], dimension, eps)) {
+                vertices[i].push_back(j);
+                neighbor.degree[i]++;
+            }
+        }
+    }
+        
+    neighbor.num_of_edges = 0;
+    for (int i = 0; i < num_of_vertices; i++) {
+        neighbor.num_of_edges += neighbor.degree[i];
+        if (i > 0) {
+            neighbor.edge_pos[i] = neighbor.edge_pos[i-1] + neighbor.degree[i-1];
+        } else {
+            neighbor.edge_pos[i] = 0;
+        }
+    }
+
+    neighbor.edge = new int[neighbor.num_of_edges];
+    for (int i = 0; i < num_of_vertices; i++) {
+        for (int j = 0; j < vertices[i].size(); j++) {
+            neighbor.edge[neighbor.edge_pos[i] + j] = vertices[i][j];
+        }
+    }
+
+    return neighbor;
+}
+
+graph constuct_neighbor_img(unsigned char* img, int channels, int width, int height, int eps) {
+    int num_of_pixels = height * width;
+    int dimension = 5;
+
+    int** raw_vertices = new int *[num_of_pixels];
+    graph neighbor;
+    neighbor.num_of_vertices = num_of_pixels;
+    neighbor.edge_pos = new int[num_of_pixels];
+    neighbor.degree = new int[num_of_pixels];
+    memset(neighbor.degree, 0, sizeof(int) * num_of_pixels);
+    std::vector<std::vector<int>> vertices(num_of_pixels);
+
+    for (int i = 0; i < num_of_pixels; i++) {
+        raw_vertices[i] = new int[dimension];
+    }
+
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            raw_vertices[i * width + j][0] = img[channels * (width * i + j) + 0];
+            raw_vertices[i * width + j][1] = img[channels * (width * i + j) + 1];
+            raw_vertices[i * width + j][2] = img[channels * (width * i + j) + 2];
+            raw_vertices[i * width + j][3] = i;
+            raw_vertices[i * width + j][4] = j;
+        }
+    }
+
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            for (int m = i - eps; m <= i + eps; m++) {
+                for (int n = j - eps; n < j + eps; n++) {
+                    if (m >= 0 && m < height && n >= 0 && n < width) {
+                        if (is_close(raw_vertices[i * width + j], raw_vertices[m * width + n], dimension, eps)) {
+                            vertices[i * width + j].push_back(j);
+                            neighbor.degree[i * width + j]++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    neighbor.num_of_edges = 0;
+    for (int i = 0; i < num_of_pixels; i++) {
+        neighbor.num_of_edges += neighbor.degree[i];
+        if (i > 0) {
+            neighbor.edge_pos[i] = neighbor.edge_pos[i-1] + neighbor.degree[i-1];
+        } else {
+            neighbor.edge_pos[i] = 0;
+        }
+    }
+
+    neighbor.edge = new int[neighbor.num_of_edges];
+    for (int i = 0; i < num_of_pixels; i++) {
+        for (int j = 0; j < vertices[i].size(); j++) {
+            neighbor.edge[neighbor.edge_pos[i] + j] = vertices[i][j];
+        }
+    }
+
+    return neighbor;
+}
+
