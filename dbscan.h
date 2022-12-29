@@ -5,6 +5,8 @@ typedef struct graph {
     int num_of_vertices = 0;
     int num_of_edges = 0;
     int *edge, *edge_pos, *degree;
+    int *d_edge, *d_edge_pos, *d_degree;
+    bool on_device = false;
 } graph;
 
 class DBSCAN{
@@ -25,7 +27,6 @@ class DBSCAN{
         bool *d_is_core, *d_frontier, *d_done;
         
         bool is_neighbor(int, int);
-        // bool is_close(int*, int*);
         void BFS(int, int);
         void set_cluster_color();
 
@@ -42,6 +43,5 @@ class DBSCAN{
         void print_type();
 };
 
-bool is_close(int* a, int* b, int dimension, int eps);
 graph constuct_neighbor_pts(int num_of_vertices, int dimension, int** raw_vertices, int eps);
 graph constuct_neighbor_img(unsigned char* img, int channels, int width, int height, int eps);

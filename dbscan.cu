@@ -7,7 +7,7 @@
 #include "dbscan.h"
 #define BS 1024
 #define abs(a, b) ((a > b) ? a - b : b - a)
-// #define DEBUG
+#define DEBUG
 
 __global__ void bfs(int *edge, int *edge_pos, int *degree, bool *is_core, bool *frontier, int *cluster_label, int cluster_id, bool *done, int num_of_vertices) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -99,12 +99,12 @@ DBSCAN::set_cluster_color() {
 }
 
 int*
-DBSCAN::cluster(graph neighbors) {
-    num_of_vertices = neighbors.num_of_vertices;
-    num_of_edges = neighbors.num_of_edges;
-    edge_pos = neighbors.edge_pos;
-    degree = neighbors.degree;
-    edge = neighbors.edge;
+DBSCAN::cluster(graph neighbor) {
+    num_of_vertices = neighbor.num_of_vertices;
+    num_of_edges = neighbor.num_of_edges;
+    edge_pos = neighbor.edge_pos;
+    degree = neighbor.degree;
+    edge = neighbor.edge;
 
     is_core = new bool[num_of_vertices];
     frontier = new bool[num_of_vertices];
@@ -120,17 +120,24 @@ DBSCAN::cluster(graph neighbors) {
             is_core[i] = false;
         }
     }
-    cudaMalloc((void **)&d_edge, sizeof(int) * num_of_edges);
-    cudaMalloc((void **)&d_edge_pos, sizeof(int) * num_of_vertices);
-    cudaMalloc((void **)&d_degree, sizeof(int) * num_of_vertices);
+    if (!neighbor.on_device) {
+        cudaMalloc((void **)&d_edge, sizeof(int) * num_of_edges);
+        cudaMalloc((void **)&d_edge_pos, sizeof(int) * num_of_vertices);
+        cudaMalloc((void **)&d_degree, sizeof(int) * num_of_vertices);
+
+        cudaMemcpy(d_edge, edge, sizeof(int) * num_of_edges, cudaMemcpyHostToDevice); 
+        cudaMemcpy(d_edge_pos, edge_pos, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
+        cudaMemcpy(d_degree, degree, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
+    } else {
+        d_edge = neighbor.d_edge;
+        d_edge_pos = neighbor.d_edge_pos;
+        d_degree = neighbor.d_degree;
+    }
     cudaMalloc((void **)&d_is_core, sizeof(bool) * num_of_vertices);
     cudaMalloc((void **)&d_frontier, sizeof(bool) * num_of_vertices);
     cudaMalloc((void **)&d_cluster_label, sizeof(int) * num_of_vertices);
     cudaMalloc((void **)&d_done, sizeof(bool));
 
-    cudaMemcpy(d_edge, edge, sizeof(int) * num_of_edges, cudaMemcpyHostToDevice); 
-    cudaMemcpy(d_edge_pos, edge_pos, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
-    cudaMemcpy(d_degree, degree, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
     cudaMemcpy(d_is_core, is_core, sizeof(bool) * num_of_vertices, cudaMemcpyHostToDevice); 
     cudaMemcpy(d_cluster_label, cluster_label, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
     
@@ -211,7 +218,6 @@ graph constuct_neighbor_pts(int num_of_vertices, int dimension, int** raw_vertic
             neighbor.edge[neighbor.edge_pos[i] + j] = vertices[i][j];
         }
     }
-
     return neighbor;
 }
 
@@ -265,7 +271,7 @@ __global__ void get_neighbor(int* edge, int* edge_pos, unsigned char* img, int c
 
     int r = tid / width;
     int c = tid % width;
-
+    
     int pos = edge_pos[tid];
 
     for (int m = r - eps; m <= r + eps; m++) {
@@ -299,39 +305,27 @@ graph constuct_neighbor_img(unsigned char* img, int channels, int width, int hei
     neighbor.degree = new int[num_of_vertices];
     memset(neighbor.degree, 0, sizeof(int) * num_of_vertices);
 
-    int *d_degree, *d_edge, *d_edge_pos; 
+    // int *d_degree, *d_edge, *d_edge_pos; 
+    neighbor.on_device = true;
     unsigned char *d_img;
-    cudaMalloc((void **)&d_degree, sizeof(int) * num_of_vertices);
+    cudaMalloc((void **)&neighbor.d_degree, sizeof(int) * num_of_vertices);
     cudaMalloc((void **)&d_img, sizeof(int) * height * width * channels);
-    cudaMemcpy(d_degree, neighbor.degree, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
+    cudaMemcpy(neighbor.d_degree, neighbor.degree, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
     cudaMemcpy(d_img, img, sizeof(unsigned char) * height * width * channels, cudaMemcpyHostToDevice); 
-    get_degree<<<(height * width + BS - 1) / BS, BS>>>(d_degree, d_img, channels, height, width, eps, 5);
-    cudaMemcpy(neighbor.degree, d_degree, sizeof(int) * num_of_vertices, cudaMemcpyDeviceToHost);
-
-    #ifdef DEBUG
-    for (int i = 0; i < num_of_vertices; i++) {
-        std::cout << neighbor.degree[i] << " ";
-    }
-    #endif
+    get_degree<<<(height * width + BS - 1) / BS, BS>>>(neighbor.d_degree, d_img, channels, height, width, eps, 5);
+    cudaMemcpy(neighbor.degree, neighbor.d_degree, sizeof(int) * num_of_vertices, cudaMemcpyDeviceToHost);
 
     thrust::exclusive_scan(neighbor.degree, neighbor.degree + num_of_vertices, neighbor.edge_pos);
-    
-    #ifdef DEBUG
-    std::cout << "==========\n";
-    for (int i = 0; i < num_of_vertices; i++) {
-        std::cout << neighbor.edge_pos[i] << " ";
-    }
-    #endif
 
     int num_of_edges = neighbor.edge_pos[num_of_vertices-1] + neighbor.degree[num_of_vertices-1];
     neighbor.num_of_edges = num_of_edges;
     neighbor.edge = new int[neighbor.num_of_edges];
-    cudaMalloc((void **)&d_edge, sizeof(int) * num_of_edges);
-    cudaMalloc((void **)&d_edge_pos, sizeof(int) * num_of_vertices);
-    cudaMemcpy(d_edge, neighbor.edge, sizeof(int) * num_of_edges, cudaMemcpyHostToDevice); 
-    cudaMemcpy(d_edge_pos, neighbor.edge_pos, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
-    get_neighbor<<<(height * width + BS - 1) / BS, BS>>>(d_edge, d_edge_pos, d_img, channels, height, width, eps, 5);
-    cudaMemcpy(neighbor.edge, d_edge, sizeof(int) * num_of_edges, cudaMemcpyDeviceToHost);
+    cudaMalloc((void **)&neighbor.d_edge, sizeof(int) * num_of_edges);
+    cudaMalloc((void **)&neighbor.d_edge_pos, sizeof(int) * num_of_vertices);
+    cudaMemcpy(neighbor.d_edge, neighbor.edge, sizeof(int) * num_of_edges, cudaMemcpyHostToDevice); 
+    cudaMemcpy(neighbor.d_edge_pos, neighbor.edge_pos, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
+    get_neighbor<<<(height * width + BS - 1) / BS, BS>>>(neighbor.d_edge, neighbor.d_edge_pos, d_img, channels, height, width, eps, 5);
+    cudaMemcpy(neighbor.edge, neighbor.d_edge, sizeof(int) * num_of_edges, cudaMemcpyDeviceToHost);
     return neighbor;
 }
 
