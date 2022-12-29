@@ -115,7 +115,6 @@ int main(int argc, char** argv) {
     printf("%f second\n", time_used);
     #endif
 
-    // dbscan.print_adjacency_lists();
     // dbscan.print_cluster();
     
     int* color = dbscan.get_colors();

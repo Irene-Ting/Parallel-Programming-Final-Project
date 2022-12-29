@@ -1,5 +1,6 @@
 #include <vector>
 #include <string.h>
+
 typedef struct graph {
     int num_of_vertices = 0;
     int num_of_edges = 0;
@@ -14,7 +15,6 @@ class DBSCAN{
         int num_of_vertices;
         int num_of_edges;
         int dimension;
-        // vertex* vertices; // vertices representation
         int* colors; // cluster id -> vertex id
         int num_of_cluster;
 

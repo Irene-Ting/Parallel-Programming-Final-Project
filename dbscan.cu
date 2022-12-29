@@ -2,9 +2,11 @@
 #include <math.h>
 #include <iostream>
 #include <cuda.h>
+#include <thrust/scan.h>
 #include <string.h>
 #include "dbscan.h"
 #define BS 1024
+#define abs(a, b) ((a > b) ? a - b : b - a)
 // #define DEBUG
 
 __global__ void bfs(int *edge, int *edge_pos, int *degree, bool *is_core, bool *frontier, int *cluster_label, int cluster_id, bool *done, int num_of_vertices) {
@@ -96,39 +98,6 @@ DBSCAN::set_cluster_color() {
     }
 }
 
-// bool  
-// DBSCAN::is_close(int* a, int* b) {
-//     float sum = 0;
-//     int eps_square = eps * eps;
-//     for (int i = 0; i < dimension; i++) {
-//         int diff = a[i] - b[i];
-//         if (diff > eps) {
-//             return false;
-//         }
-//         sum += diff * diff;
-//         if (diff > eps_square) {
-//             return false;
-//         }
-//     }
-//     return sqrt(sum) <= eps;
-// }
-
-// void
-// DBSCAN::constuct_neighbor(int** raw_vertices) {
-//     for (int i = 0; i < num_of_vertices; i++) {
-//         #ifdef DEBUG
-//         std::cout << "constuct_neighbor: " << i << " / " << num_of_vertices << std::endl;
-//         #endif
-//         for (int j = 0; j < num_of_vertices; j++) {
-//             if (i == j) continue;
-//             if (is_close(raw_vertices[i], raw_vertices[j])) {
-//                 vertices[i].neighbors.push_back(j);
-//                 degree[i]++;
-//             }
-//         }
-//     }
-// }
-
 int*
 DBSCAN::cluster(graph neighbors) {
     num_of_vertices = neighbors.num_of_vertices;
@@ -180,6 +149,11 @@ DBSCAN::cluster(graph neighbors) {
         cudaMemcpy(cluster_label, d_cluster_label, sizeof(int) * num_of_vertices, cudaMemcpyDeviceToHost);
     }
     set_cluster_color();
+    cudaFree(d_edge); 
+    cudaFree(d_edge_pos); 
+    cudaFree(d_degree); 
+    cudaFree(d_is_core); 
+    cudaFree(d_cluster_label); 
     return cluster_label;
 }
 
@@ -187,7 +161,7 @@ bool is_close(int* a, int* b, int dimension, int eps) {
     float sum = 0;
     int eps_square = eps * eps;
     for (int i = 0; i < dimension; i++) {
-        int diff = a[i] - b[i];
+        int diff = abs(a[i], b[i]);
         if (diff > eps) {
             return false;
         }
@@ -199,6 +173,7 @@ bool is_close(int* a, int* b, int dimension, int eps) {
     return sqrt(sum) <= eps;
 }
 
+// for dbscan_demo
 graph constuct_neighbor_pts(int num_of_vertices, int dimension, int** raw_vertices, int eps) {
     graph neighbor;
     neighbor.num_of_vertices = num_of_vertices;
@@ -240,64 +215,123 @@ graph constuct_neighbor_pts(int num_of_vertices, int dimension, int** raw_vertic
     return neighbor;
 }
 
-graph constuct_neighbor_img(unsigned char* img, int channels, int width, int height, int eps) {
-    int num_of_pixels = height * width;
-    int dimension = 5;
-
-    int** raw_vertices = new int *[num_of_pixels];
-    graph neighbor;
-    neighbor.num_of_vertices = num_of_pixels;
-    neighbor.edge_pos = new int[num_of_pixels];
-    neighbor.degree = new int[num_of_pixels];
-    memset(neighbor.degree, 0, sizeof(int) * num_of_pixels);
-    std::vector<std::vector<int>> vertices(num_of_pixels);
-
-    for (int i = 0; i < num_of_pixels; i++) {
-        raw_vertices[i] = new int[dimension];
-    }
-
-    for (int i = 0; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            raw_vertices[i * width + j][0] = img[channels * (width * i + j) + 0];
-            raw_vertices[i * width + j][1] = img[channels * (width * i + j) + 1];
-            raw_vertices[i * width + j][2] = img[channels * (width * i + j) + 2];
-            raw_vertices[i * width + j][3] = i;
-            raw_vertices[i * width + j][4] = j;
+inline __device__ bool d_is_close(int a[], int b[], int dimension, int eps) {
+    float sum = 0;
+    int eps_square = eps * eps;
+    for (int i = 0; i < dimension; i++) {
+        int diff = a[i] - b[i];
+        if (diff > eps) {
+            return false;
+        }
+        sum += diff * diff;
+        if (diff > eps_square) {
+            return false;
         }
     }
+    return sqrt(sum) <= eps;
+}
 
-    for (int i = 0; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            for (int m = i - eps; m <= i + eps; m++) {
-                for (int n = j - eps; n < j + eps; n++) {
-                    if (m >= 0 && m < height && n >= 0 && n < width) {
-                        if (is_close(raw_vertices[i * width + j], raw_vertices[m * width + n], dimension, eps)) {
-                            vertices[i * width + j].push_back(j);
-                            neighbor.degree[i * width + j]++;
-                        }
-                    }
+__global__ void get_degree(int* degree, unsigned char* img, int channels, int height, int width, int eps, int dimension) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= width * height) return;
+
+    int r = tid / width;
+    int c = tid % width;
+    for (int m = r - eps; m <= r + eps; m++) {
+        for (int n = c - eps; n < c + eps; n++) {
+            if (m >= 0 && m < height && n >= 0 && n < width && m != r && n != c) {
+                int src[5], dst[5];
+                src[0] = img[channels * (width * r + c) + 0];
+                src[1] = img[channels * (width * r + c) + 1];
+                src[2] = img[channels * (width * r + c) + 2];
+                src[3] = r;
+                src[4] = c;
+                dst[0] = img[channels * (width * m + n) + 0];
+                dst[1] = img[channels * (width * m + n) + 1];
+                dst[2] = img[channels * (width * m + n) + 2];
+                dst[3] = m;
+                dst[4] = n;
+                if (d_is_close(src, dst, dimension, eps)) {
+                    degree[r * width + c]++;
                 }
             }
         }
     }
+}
 
-    neighbor.num_of_edges = 0;
-    for (int i = 0; i < num_of_pixels; i++) {
-        neighbor.num_of_edges += neighbor.degree[i];
-        if (i > 0) {
-            neighbor.edge_pos[i] = neighbor.edge_pos[i-1] + neighbor.degree[i-1];
-        } else {
-            neighbor.edge_pos[i] = 0;
+__global__ void get_neighbor(int* edge, int* edge_pos, unsigned char* img, int channels, int height, int width, int eps, int dimension) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= height * width) return;
+
+    int r = tid / width;
+    int c = tid % width;
+
+    int pos = edge_pos[tid];
+
+    for (int m = r - eps; m <= r + eps; m++) {
+        for (int n = c - eps; n < c + eps; n++) {
+            if (m >= 0 && m < height && n >= 0 && n < width && m != r && n != c) {
+                int src[5], dst[5];
+                src[0] = img[channels * (width * r + c) + 0];
+                src[1] = img[channels * (width * r + c) + 1];
+                src[2] = img[channels * (width * r + c) + 2];
+                src[3] = r;
+                src[4] = c;
+                dst[0] = img[channels * (width * m + n) + 0];
+                dst[1] = img[channels * (width * m + n) + 1];
+                dst[2] = img[channels * (width * m + n) + 2];
+                dst[3] = m;
+                dst[4] = n;
+                if (d_is_close(src, dst, dimension, eps)) {
+                    edge[pos++] = width * m + n;
+                }
+            }
         }
     }
+}
 
+// for image_seg
+graph constuct_neighbor_img(unsigned char* img, int channels, int width, int height, int eps) {
+    int num_of_vertices = height * width;
+    graph neighbor;
+    neighbor.num_of_vertices = num_of_vertices;
+    neighbor.edge_pos = new int[num_of_vertices];
+    neighbor.degree = new int[num_of_vertices];
+    memset(neighbor.degree, 0, sizeof(int) * num_of_vertices);
+
+    int *d_degree, *d_edge, *d_edge_pos; 
+    unsigned char *d_img;
+    cudaMalloc((void **)&d_degree, sizeof(int) * num_of_vertices);
+    cudaMalloc((void **)&d_img, sizeof(int) * height * width * channels);
+    cudaMemcpy(d_degree, neighbor.degree, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
+    cudaMemcpy(d_img, img, sizeof(unsigned char) * height * width * channels, cudaMemcpyHostToDevice); 
+    get_degree<<<(height * width + BS - 1) / BS, BS>>>(d_degree, d_img, channels, height, width, eps, 5);
+    cudaMemcpy(neighbor.degree, d_degree, sizeof(int) * num_of_vertices, cudaMemcpyDeviceToHost);
+
+    #ifdef DEBUG
+    for (int i = 0; i < num_of_vertices; i++) {
+        std::cout << neighbor.degree[i] << " ";
+    }
+    #endif
+
+    thrust::exclusive_scan(neighbor.degree, neighbor.degree + num_of_vertices, neighbor.edge_pos);
+    
+    #ifdef DEBUG
+    std::cout << "==========\n";
+    for (int i = 0; i < num_of_vertices; i++) {
+        std::cout << neighbor.edge_pos[i] << " ";
+    }
+    #endif
+
+    int num_of_edges = neighbor.edge_pos[num_of_vertices-1] + neighbor.degree[num_of_vertices-1];
+    neighbor.num_of_edges = num_of_edges;
     neighbor.edge = new int[neighbor.num_of_edges];
-    for (int i = 0; i < num_of_pixels; i++) {
-        for (int j = 0; j < vertices[i].size(); j++) {
-            neighbor.edge[neighbor.edge_pos[i] + j] = vertices[i][j];
-        }
-    }
-
+    cudaMalloc((void **)&d_edge, sizeof(int) * num_of_edges);
+    cudaMalloc((void **)&d_edge_pos, sizeof(int) * num_of_vertices);
+    cudaMemcpy(d_edge, neighbor.edge, sizeof(int) * num_of_edges, cudaMemcpyHostToDevice); 
+    cudaMemcpy(d_edge_pos, neighbor.edge_pos, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
+    get_neighbor<<<(height * width + BS - 1) / BS, BS>>>(d_edge, d_edge_pos, d_img, channels, height, width, eps, 5);
+    cudaMemcpy(neighbor.edge, d_edge, sizeof(int) * num_of_edges, cudaMemcpyDeviceToHost);
     return neighbor;
 }
 

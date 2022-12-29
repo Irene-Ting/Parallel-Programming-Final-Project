@@ -55,16 +55,6 @@ int main(int argc, char** argv) {
     dbscan.print_edge();
     dbscan.print_cluster();
     /*
-    vertex 0: 1 2 3 
-    vertex 1: 0 2 3 4 
-    vertex 2: 0 1 3 4 
-    vertex 3: 0 1 2 4 
-    vertex 4: 1 2 3 
-    vertex 5: 6 7 8 
-    vertex 6: 5 7 8 
-    vertex 7: 5 6 8 
-    vertex 8: 5 6 7 
-    vertex 9: 
     3 4 4 4 3 3 3 3 3 0 
     0 3 7 11 15 18 21 24 27 30 
     1 2 3 0 2 3 4 0 1 3 4 0 1 2 4 1 2 3 6 7 8 5 7 8 5 6 8 5 6 7 
