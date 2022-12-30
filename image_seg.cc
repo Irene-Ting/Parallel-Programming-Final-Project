@@ -5,6 +5,7 @@
 #include <math.h>
 #include <png.h>
 #include "dbscan.h"
+#define CAL_TIME
 
 int read_png(const char* filename, unsigned char** image, unsigned* height, 
              unsigned* width, unsigned* channels) {
@@ -89,28 +90,31 @@ int main(int argc, char** argv) {
     unsigned char* img = NULL;
     read_png(inputfile, &img, &height, &width, &channels);
 
-    int num_of_pixels = height * width;
-    int dimension = 5;
-    int** graph = new int *[num_of_pixels];
-    for (int i = 0; i < num_of_pixels; i++) {
-        graph[i] = new int[dimension];
-    }
+    #ifdef CAL_TIME
+    struct timespec start, end, temp;
+    double time_used;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    #endif
 
-    for (int i = 0; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            graph[i * width + j][0] = img[channels * (width * i + j) + 0];
-            graph[i * width + j][1] = img[channels * (width * i + j) + 1];
-            graph[i * width + j][2] = img[channels * (width * i + j) + 2];
-            graph[i * width + j][3] = i;
-            graph[i * width + j][4] = j;
-        }
-    }
-    
     DBSCAN dbscan(eps, minPts);
-    int* cluster_label = new int[num_of_pixels];
-    cluster_label = dbscan.cluster(num_of_pixels, dimension, graph);
+    int* cluster_label = new int[height * width];
+    graph neighbor = constuct_neighbor_img(img, channels, width, height, eps);
+    cluster_label = dbscan.cluster(neighbor);
 
-    // dbscan.print_adjacency_lists();
+    #ifdef CAL_TIME
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    if ((end.tv_nsec - start.tv_nsec) < 0) {
+        temp.tv_sec = end.tv_sec-start.tv_sec-1;
+        temp.tv_nsec = 1000000000 + end.tv_nsec - start.tv_nsec;
+    } else {
+        temp.tv_sec = end.tv_sec - start.tv_sec;
+        temp.tv_nsec = end.tv_nsec - start.tv_nsec;
+    }
+    time_used = temp.tv_sec + (double) temp.tv_nsec / 1000000000.0;
+    
+    printf("%f second\n", time_used);
+    #endif
+
     // dbscan.print_cluster();
     
     int* color = dbscan.get_colors();
