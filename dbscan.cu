@@ -11,7 +11,7 @@
 
 __global__ void bfs(int *edge, int *edge_pos, int *degree, bool *is_core, bool *frontier, int *cluster_label, int cluster_id, bool *done, int num_of_vertices) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-
+    *done = true;
     if (tid >= num_of_vertices) return;
     if (frontier[tid] && cluster_label[tid] == -1 && is_core[tid]) {
         frontier[tid] = false;
@@ -33,8 +33,6 @@ DBSCAN::BFS(int id, int cluster_id) {
     frontier[id] = true;
     cudaMemcpy(d_frontier, frontier, sizeof(bool) * num_of_vertices, cudaMemcpyHostToDevice); 
     while (!(*done)) {
-        *done = true;
-        cudaMemcpy(d_done, done, sizeof(bool), cudaMemcpyHostToDevice); 
         bfs<<<(num_of_vertices+BS-1)/BS, BS>>>(d_edge, d_edge_pos, d_degree, d_is_core, d_frontier, d_cluster_label, cluster_id, d_done, num_of_vertices);
         cudaMemcpy(done, d_done, sizeof(bool), cudaMemcpyDeviceToHost);
     }
@@ -153,7 +151,9 @@ DBSCAN::cluster(graph neighbor) {
             BFS(i, cluster_id);
             cluster_id += 1;
         }
-        cudaMemcpy(cluster_label, d_cluster_label, sizeof(int) * num_of_vertices, cudaMemcpyDeviceToHost);
+        if (i + 1 < num_of_vertices) {
+            cudaMemcpy(cluster_label+i+1, d_cluster_label+i+1, sizeof(int), cudaMemcpyDeviceToHost);
+        }
     }
     set_cluster_color();
     cudaFree(d_edge); 
@@ -258,7 +258,7 @@ __global__ void get_degree(int* degree, unsigned char* img, int channels, int he
                 dst[3] = m;
                 dst[4] = n;
                 if (d_is_close(src, dst, dimension, eps)) {
-                    degree[r * width + c]++;
+                    degree[tid]++;
                 }
             }
         }

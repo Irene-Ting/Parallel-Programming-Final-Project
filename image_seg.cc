@@ -115,7 +115,7 @@ int main(int argc, char** argv) {
     printf("%f second\n", time_used);
     #endif
 
-    dbscan.print_cluster();
+    // dbscan.print_cluster();
     
     int* color = dbscan.get_colors();
     for (int i = 0; i < height * width; i++) {
