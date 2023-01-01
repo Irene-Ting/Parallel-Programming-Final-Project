@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    graph neighbor = constuct_neighbor_pts(V, D, raw_vertices, 3);
+    graph neighbor = construct_neighbor_pts(V, D, raw_vertices, 3);
 
     #ifdef DEBUG
     std::cout << neighbor.num_of_vertices << std::endl;

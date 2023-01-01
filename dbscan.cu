@@ -5,9 +5,9 @@
 #include <thrust/scan.h>
 #include <string.h>
 #include "dbscan.h"
-#define BS 1024
+#define BS 64
 #define abs(a, b) ((a > b) ? a - b : b - a)
-#define DEBUG
+// #define DEBUG
 
 __global__ void bfs(int *edge, int *edge_pos, int *degree, bool *is_core, bool *frontier, int *cluster_label, int cluster_id, bool *done, int num_of_vertices) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -181,7 +181,7 @@ bool is_close(int* a, int* b, int dimension, int eps) {
 }
 
 // for dbscan_demo
-graph constuct_neighbor_pts(int num_of_vertices, int dimension, int** raw_vertices, int eps) {
+graph construct_neighbor_pts(int num_of_vertices, int dimension, int** raw_vertices, int eps) {
     graph neighbor;
     neighbor.num_of_vertices = num_of_vertices;
     neighbor.edge_pos = new int[num_of_vertices];
@@ -237,28 +237,56 @@ inline __device__ bool d_is_close(int a[], int b[], int dimension, int eps) {
     return sqrt(sum) <= eps;
 }
 
-__global__ void get_degree(int* degree, unsigned char* img, int channels, int height, int width, int eps, int dimension) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid >= width * height) return;
+inline __device__ void translate(int* shm_r, int* shm_c, int r, int c, int blockidx_x, int blockidx_y, int eps) {
+    *shm_r = r - blockidx_y + eps;
+    *shm_c = c - blockIdx.x * BS + eps;
+}
 
-    int r = tid / width;
-    int c = tid % width;
+extern __shared__ unsigned char shared_img[];
+
+__global__ void get_degree(int* degree, unsigned char* img, int channels, int height, int width, int eps, int dimension) {    
+    int r = blockIdx.y;
+    int c = blockIdx.x * BS + threadIdx.x;
+    
+    for (int i = r-eps; i <= r + eps; i++) {
+        if (i >= 0 && i < height) {
+            // for (int j = c - eps; j <= (blockIdx.x + 1) * BS + eps - 1; j += BS) {
+            for (int k = 0; k < 3; k++) {
+                int j = c - eps + BS * k;
+                if (j > (blockIdx.x + 1) * BS + eps - 1) continue;
+                if (j >= 0 && j < width) {
+                    int shm_r, shm_c;
+                    translate(&shm_r, &shm_c, i, j, blockIdx.x, blockIdx.y, eps);
+                    shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 2] = img[channels * (width * i + j) + 2];
+                    shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 1] = img[channels * (width * i + j) + 1];
+                    shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 0] = img[channels * (width * i + j) + 0];
+                }
+            }
+        }
+    }
+    __syncthreads();
+
+    if (c >= width) return;
     for (int m = r - eps; m <= r + eps; m++) {
-        for (int n = c - eps; n < c + eps; n++) {
+        for (int n = c - eps; n <= c + eps; n++) {
             if (m >= 0 && m < height && n >= 0 && n < width && m != r && n != c) {
                 int src[5], dst[5];
-                src[0] = img[channels * (width * r + c) + 0];
-                src[1] = img[channels * (width * r + c) + 1];
-                src[2] = img[channels * (width * r + c) + 2];
+                int shm_r, shm_c;
+                translate(&shm_r, &shm_c, r, c, blockIdx.x, blockIdx.y, eps);
+                src[0] = shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 0];
+                src[1] = shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 1];
+                src[2] = shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 2];
                 src[3] = r;
                 src[4] = c;
-                dst[0] = img[channels * (width * m + n) + 0];
-                dst[1] = img[channels * (width * m + n) + 1];
-                dst[2] = img[channels * (width * m + n) + 2];
+                
+                translate(&shm_r, &shm_c, m, n, blockIdx.x, blockIdx.y, eps);
+                dst[0] = shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 0];
+                dst[1] = shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 1];
+                dst[2] = shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 2];
                 dst[3] = m;
                 dst[4] = n;
                 if (d_is_close(src, dst, dimension, eps)) {
-                    degree[tid]++;
+                    degree[r * width + c]++;
                 }
             }
         }
@@ -266,26 +294,45 @@ __global__ void get_degree(int* degree, unsigned char* img, int channels, int he
 }
 
 __global__ void get_neighbor(int* edge, int* edge_pos, unsigned char* img, int channels, int height, int width, int eps, int dimension) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid >= height * width) return;
+    int r = blockIdx.y;
+    int c = blockIdx.x * BS + threadIdx.x;
 
-    int r = tid / width;
-    int c = tid % width;
-    
-    int pos = edge_pos[tid];
+    for (int i = r-eps; i <= r + eps; i++) {
+        if (i >= 0 && i < height) {
+            // for (int j = c - eps; j <= (blockIdx.x + 1) * BS + eps - 1; j += BS) {
+            for (int k = 0; k < 3; k++) {
+                int j = c - eps + BS * k;
+                if (j > (blockIdx.x + 1) * BS + eps - 1) continue;
+                if (j >= 0 && j < width) {
+                    int shm_r, shm_c;
+                    translate(&shm_r, &shm_c, i, j, blockIdx.x, blockIdx.y, eps);
+                    shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 2] = img[channels * (width * i + j) + 2];
+                    shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 1] = img[channels * (width * i + j) + 1];
+                    shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 0] = img[channels * (width * i + j) + 0];
+                }
+            }
+        }
+    }
+    __syncthreads();
 
+    if (c >= width) return;
+    int pos = edge_pos[r * width + c];
     for (int m = r - eps; m <= r + eps; m++) {
-        for (int n = c - eps; n < c + eps; n++) {
+        for (int n = c - eps; n <= c + eps; n++) {
             if (m >= 0 && m < height && n >= 0 && n < width && m != r && n != c) {
                 int src[5], dst[5];
-                src[0] = img[channels * (width * r + c) + 0];
-                src[1] = img[channels * (width * r + c) + 1];
-                src[2] = img[channels * (width * r + c) + 2];
+                int shm_r, shm_c;
+                translate(&shm_r, &shm_c, r, c, blockIdx.x, blockIdx.y, eps);
+                src[0] = shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 0];
+                src[1] = shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 1];
+                src[2] = shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 2];
                 src[3] = r;
                 src[4] = c;
-                dst[0] = img[channels * (width * m + n) + 0];
-                dst[1] = img[channels * (width * m + n) + 1];
-                dst[2] = img[channels * (width * m + n) + 2];
+
+                translate(&shm_r, &shm_c, m, n, blockIdx.x, blockIdx.y, eps);
+                dst[0] = shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 0];
+                dst[1] = shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 1];
+                dst[2] = shared_img[channels * ((BS + 2 * eps) * shm_r + shm_c) + 2];
                 dst[3] = m;
                 dst[4] = n;
                 if (d_is_close(src, dst, dimension, eps)) {
@@ -297,7 +344,7 @@ __global__ void get_neighbor(int* edge, int* edge_pos, unsigned char* img, int c
 }
 
 // for image_seg
-graph constuct_neighbor_img(unsigned char* img, int channels, int width, int height, int eps) {
+graph construct_neighbor_img(unsigned char* img, int channels, int width, int height, int eps) {
     int num_of_vertices = height * width;
     graph neighbor;
     neighbor.num_of_vertices = num_of_vertices;
@@ -305,14 +352,16 @@ graph constuct_neighbor_img(unsigned char* img, int channels, int width, int hei
     neighbor.degree = new int[num_of_vertices];
     memset(neighbor.degree, 0, sizeof(int) * num_of_vertices);
 
-    // int *d_degree, *d_edge, *d_edge_pos; 
+    dim3 num_threads(BS, 1);
+    dim3 num_blocks(width / BS + 1, height);
+
     neighbor.on_device = true;
     unsigned char *d_img;
     cudaMalloc((void **)&neighbor.d_degree, sizeof(int) * num_of_vertices);
     cudaMalloc((void **)&d_img, sizeof(int) * height * width * channels);
     cudaMemcpy(neighbor.d_degree, neighbor.degree, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
     cudaMemcpy(d_img, img, sizeof(unsigned char) * height * width * channels, cudaMemcpyHostToDevice); 
-    get_degree<<<(height * width + BS - 1) / BS, BS>>>(neighbor.d_degree, d_img, channels, height, width, eps, 5);
+    get_degree<<<num_blocks, num_threads, sizeof(unsigned char)*(2*eps+1)*(BS+2*eps)*channels>>>(neighbor.d_degree, d_img, channels, height, width, eps, 5);
     cudaMemcpy(neighbor.degree, neighbor.d_degree, sizeof(int) * num_of_vertices, cudaMemcpyDeviceToHost);
 
     thrust::exclusive_scan(neighbor.degree, neighbor.degree + num_of_vertices, neighbor.edge_pos);
@@ -324,7 +373,7 @@ graph constuct_neighbor_img(unsigned char* img, int channels, int width, int hei
     cudaMalloc((void **)&neighbor.d_edge_pos, sizeof(int) * num_of_vertices);
     cudaMemcpy(neighbor.d_edge, neighbor.edge, sizeof(int) * num_of_edges, cudaMemcpyHostToDevice); 
     cudaMemcpy(neighbor.d_edge_pos, neighbor.edge_pos, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
-    get_neighbor<<<(height * width + BS - 1) / BS, BS>>>(neighbor.d_edge, neighbor.d_edge_pos, d_img, channels, height, width, eps, 5);
+    get_neighbor<<<num_blocks, num_threads, sizeof(unsigned char)*(2*eps+1)*(BS+2*eps)*channels>>>(neighbor.d_edge, neighbor.d_edge_pos, d_img, channels, height, width, eps, 5);
     cudaMemcpy(neighbor.edge, neighbor.d_edge, sizeof(int) * num_of_edges, cudaMemcpyDeviceToHost);
     return neighbor;
 }

@@ -43,5 +43,5 @@ class DBSCAN{
         void print_type();
 };
 
-graph constuct_neighbor_pts(int num_of_vertices, int dimension, int** raw_vertices, int eps);
-graph constuct_neighbor_img(unsigned char* img, int channels, int width, int height, int eps);
+graph construct_neighbor_pts(int num_of_vertices, int dimension, int** raw_vertices, int eps);
+graph construct_neighbor_img(unsigned char* img, int channels, int width, int height, int eps);
