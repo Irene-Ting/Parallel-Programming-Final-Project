@@ -250,10 +250,7 @@ __global__ void get_degree(int* degree, unsigned char* img, int channels, int he
     
     for (int i = r-eps; i <= r + eps; i++) {
         if (i >= 0 && i < height) {
-            // for (int j = c - eps; j <= (blockIdx.x + 1) * BS + eps - 1; j += BS) {
-            for (int k = 0; k < 3; k++) {
-                int j = c - eps + BS * k;
-                if (j > (blockIdx.x + 1) * BS + eps - 1) continue;
+            for (int j = c - eps; j <= int((blockIdx.x + 1) * BS + eps - 1); j += BS) {
                 if (j >= 0 && j < width) {
                     int shm_r, shm_c;
                     translate(&shm_r, &shm_c, i, j, blockIdx.x, blockIdx.y, eps);
@@ -299,10 +296,7 @@ __global__ void get_neighbor(int* edge, int* edge_pos, unsigned char* img, int c
 
     for (int i = r-eps; i <= r + eps; i++) {
         if (i >= 0 && i < height) {
-            // for (int j = c - eps; j <= (blockIdx.x + 1) * BS + eps - 1; j += BS) {
-            for (int k = 0; k < 3; k++) {
-                int j = c - eps + BS * k;
-                if (j > (blockIdx.x + 1) * BS + eps - 1) continue;
+            for (int j = c - eps; j <= int((blockIdx.x + 1) * BS + eps - 1); j += BS) {
                 if (j >= 0 && j < width) {
                     int shm_r, shm_c;
                     translate(&shm_r, &shm_c, i, j, blockIdx.x, blockIdx.y, eps);
