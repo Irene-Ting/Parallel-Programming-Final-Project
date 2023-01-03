@@ -129,15 +129,19 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
     int cluster_id = 0;
     for (int i = 0; i < num_of_vertices; i++) {
         if (!vertices[i].visited && vertices[i].type == Core) {
+            timeBegin = std::chrono::steady_clock::now();
             vertices[i].cluster = cluster_id;
             BFS(i);
             cluster_id += 1;
+            timeEnd = std::chrono::steady_clock::now();
+            cluster_construct += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
+            std::cout << "i: " << i << " cluster_construct: " << cluster_construct << "\n";
         }
     }
     timeEnd = std::chrono::steady_clock::now();
     cluster_construct += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
     std::cout << "cluster_construct: " << cluster_construct << "\n";
-    
+    std::cout << "Total: " << cluster_construct + neighbor_construct << "\n";
     set_cluster_label();
     set_cluster_color();
     return cluster_label;
