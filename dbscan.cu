@@ -3,9 +3,10 @@
 #include <iostream>
 #include <cuda.h>
 #include <string.h>
+#include <chrono>
 #include "dbscan.h"
 #define BS 1024
-// #define DEBUG
+#define DEBUG
 
 bool
 DBSCAN::is_neighbor(int a, int b) {
@@ -138,7 +139,7 @@ void
 DBSCAN::constuct_neighbor(int** raw_vertices) {
     for (int i = 0; i < num_of_vertices; i++) {
         #ifdef DEBUG
-        std::cout << "constuct_neighbor: " << i << " / " << num_of_vertices << std::endl;
+        // std::cout << "constuct_neighbor: " << i << " / " << num_of_vertices << std::endl;
         #endif
         for (int j = 0; j < num_of_vertices; j++) {
             if (i == j) continue;
@@ -164,8 +165,25 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
     memset(cluster_label, -1, sizeof(int) * num_of_vertices);
     done = new bool;
 
+    #ifdef DEBUG
+    std::chrono::steady_clock::time_point timeBegin;
+    std::chrono::steady_clock::time_point timeEnd;
+    int neighbor_construct = 0;
+    int cluster_construct = 0;
+    int count_edge = 0;
+    int malloc_and_copy = 0;
+    timeBegin = std::chrono::steady_clock::now();
+    #endif
+
     constuct_neighbor(raw_vertices);
-    
+
+    #ifdef DEBUG
+    timeEnd = std::chrono::steady_clock::now();
+    neighbor_construct += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
+    std::cout << "neighbor_construct: " << neighbor_construct << " milliseconds\n";
+    timeBegin = std::chrono::steady_clock::now();
+    #endif
+
     num_of_edges = 0;
     for (int i = 0; i < num_of_vertices; i++) {
         num_of_edges += degree[i];
@@ -191,6 +209,12 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
             is_core[i] = false;
         }
     }
+    #ifdef DEBUG
+    timeEnd = std::chrono::steady_clock::now();
+    count_edge += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
+    std::cout << "count_edge: " << count_edge << " milliseconds\n";
+    timeBegin = std::chrono::steady_clock::now();
+    #endif
     cudaMalloc((void **)&d_edge, sizeof(int) * num_of_edges);
     cudaMalloc((void **)&d_edge_pos, sizeof(int) * num_of_vertices);
     cudaMalloc((void **)&d_degree, sizeof(int) * num_of_vertices);
@@ -204,21 +228,35 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
     cudaMemcpy(d_degree, degree, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
     cudaMemcpy(d_is_core, is_core, sizeof(bool) * num_of_vertices, cudaMemcpyHostToDevice); 
     cudaMemcpy(d_cluster_label, cluster_label, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
-    
+
+    #ifdef DEBUG
+    timeEnd = std::chrono::steady_clock::now();
+    malloc_and_copy += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
+    std::cout << "malloc_and_copy: " << malloc_and_copy << " milliseconds\n";
+    timeBegin = std::chrono::steady_clock::now();
+    #endif
+
     int cluster_id = 0;
     for (int i = 0; i < num_of_vertices; i++) {
-        #ifdef DEBUG
-        std::cout << "cluster: " << i << " / " << num_of_vertices << std::endl;
-        #endif
+        // #ifdef DEBUG
+        // std::cout << "cluster: " << i << " / " << num_of_vertices << std::endl;
+        // #endif
         if (cluster_label[i] == -1 && is_core[i]) {
-            #ifdef DEBUG
-            std::cout << "BFS(" << i << ", " << cluster_id << ")\n";
-            #endif
+            // #ifdef DEBUG
+            // std::cout << "BFS(" << i << ", " << cluster_id << ")\n";
+            // #endif
             BFS(i, cluster_id);
             cluster_id += 1;
         }
         cudaMemcpy(cluster_label, d_cluster_label, sizeof(int) * num_of_vertices, cudaMemcpyDeviceToHost);
     }
+
+    #ifdef DEBUG
+    timeEnd = std::chrono::steady_clock::now();
+    cluster_construct += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
+    std::cout << "Cluster_construct: " << cluster_construct << " milliseconds\n";
+    #endif
+    
     set_cluster_color();
     return cluster_label;
 }

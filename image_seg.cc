@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
     }
     time_used = temp.tv_sec + (double) temp.tv_nsec / 1000000000.0;
     
-    printf("%f second\n", time_used);
+    printf("Total: %f second\n", time_used);
     #endif
 
     // dbscan.print_adjacency_lists();
