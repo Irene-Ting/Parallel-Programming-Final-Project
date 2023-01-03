@@ -170,19 +170,10 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
     std::chrono::steady_clock::time_point timeEnd;
     int neighbor_construct = 0;
     int cluster_construct = 0;
-    int count_edge = 0;
-    int malloc_and_copy = 0;
     timeBegin = std::chrono::steady_clock::now();
     #endif
 
     constuct_neighbor(raw_vertices);
-
-    #ifdef DEBUG
-    timeEnd = std::chrono::steady_clock::now();
-    neighbor_construct += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
-    std::cout << "neighbor_construct: " << neighbor_construct << " milliseconds\n";
-    timeBegin = std::chrono::steady_clock::now();
-    #endif
 
     num_of_edges = 0;
     for (int i = 0; i < num_of_vertices; i++) {
@@ -211,10 +202,11 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
     }
     #ifdef DEBUG
     timeEnd = std::chrono::steady_clock::now();
-    count_edge += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
-    std::cout << "count_edge: " << count_edge << " milliseconds\n";
+    neighbor_construct += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
+    std::cout << "neighbor_construct: " << neighbor_construct << " milliseconds\n";
     timeBegin = std::chrono::steady_clock::now();
     #endif
+    
     cudaMalloc((void **)&d_edge, sizeof(int) * num_of_edges);
     cudaMalloc((void **)&d_edge_pos, sizeof(int) * num_of_vertices);
     cudaMalloc((void **)&d_degree, sizeof(int) * num_of_vertices);
@@ -228,13 +220,6 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
     cudaMemcpy(d_degree, degree, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
     cudaMemcpy(d_is_core, is_core, sizeof(bool) * num_of_vertices, cudaMemcpyHostToDevice); 
     cudaMemcpy(d_cluster_label, cluster_label, sizeof(int) * num_of_vertices, cudaMemcpyHostToDevice); 
-
-    #ifdef DEBUG
-    timeEnd = std::chrono::steady_clock::now();
-    malloc_and_copy += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
-    std::cout << "malloc_and_copy: " << malloc_and_copy << " milliseconds\n";
-    timeBegin = std::chrono::steady_clock::now();
-    #endif
 
     int cluster_id = 0;
     for (int i = 0; i < num_of_vertices; i++) {
