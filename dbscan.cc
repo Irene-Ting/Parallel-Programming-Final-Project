@@ -2,6 +2,7 @@
 #include <math.h>
 #include <iostream>
 #include <queue>
+#include <chrono>
 #include "dbscan.h"
 
 bool
@@ -100,6 +101,12 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
     dimension = d;
     vertices = new vertex[num_of_vertices];
 
+    std::chrono::steady_clock::time_point timeBegin;
+    std::chrono::steady_clock::time_point timeEnd;
+    cluster_construct = 0;
+    neighbor_construct = 0;
+    std::cout << "neighbor_construct: " << neighbor_construct << " cluster_construct: " << cluster_construct << "\n";
+    timeBegin = std::chrono::steady_clock::now();
     for (int i = 0; i < num_of_vertices; i++) {
         int cnt = 0;
         for (int j = 0; j < num_of_vertices; j++) {
@@ -115,6 +122,10 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
             vertices[i].type = Noise;
         }
     }
+    timeEnd = std::chrono::steady_clock::now();
+    neighbor_construct += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
+    std::cout << "neighbor_construct: " << neighbor_construct << "\n";
+    timeBegin = std::chrono::steady_clock::now();
     int cluster_id = 0;
     for (int i = 0; i < num_of_vertices; i++) {
         if (!vertices[i].visited && vertices[i].type == Core) {
@@ -123,7 +134,10 @@ DBSCAN::cluster(int v, int d, int** raw_vertices) {
             cluster_id += 1;
         }
     }
-
+    timeEnd = std::chrono::steady_clock::now();
+    cluster_construct += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
+    std::cout << "cluster_construct: " << cluster_construct << "\n";
+    
     set_cluster_label();
     set_cluster_color();
     return cluster_label;

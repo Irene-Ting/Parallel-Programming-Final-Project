@@ -20,7 +20,8 @@ class DBSCAN{
         int* colors; // cluster id -> vertex id
         int num_of_cluster;
         int* cluster_label; // cluster id of each vertex
-        
+        unsigned long long neighbor_construct;
+        unsigned long long cluster_construct;
         bool is_neighbor(int, int);
         float cal_distance(int*, int*);
         void BFS(int id);
