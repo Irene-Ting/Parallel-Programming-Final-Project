@@ -7,7 +7,7 @@
 #include "dbscan.h"
 #define BS 1024
 #define abs(a, b) ((a > b) ? a - b : b - a)
-#define DEBUG
+// #define DEBUG
 
 __global__ void bfs(int *edge, int *edge_pos, int *degree, bool *is_core, bool *frontier, int *cluster_label, int cluster_id, bool *done, int num_of_vertices) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;

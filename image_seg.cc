@@ -4,6 +4,7 @@
 #include <zlib.h>
 #include <math.h>
 #include <png.h>
+#include <chrono>
 #include "dbscan.h"
 #define CAL_TIME
 
@@ -98,8 +99,32 @@ int main(int argc, char** argv) {
 
     DBSCAN dbscan(eps, minPts);
     int* cluster_label = new int[height * width];
+
+    #ifdef CAL_TIME
+    std::chrono::steady_clock::time_point timeBegin;
+    std::chrono::steady_clock::time_point timeEnd;
+    int neighbor_construct = 0;
+    int cluster_construct = 0;
+    timeBegin = std::chrono::steady_clock::now();
+    #endif
+
     graph neighbor = constuct_neighbor_img(img, channels, width, height, eps);
+
+    #ifdef CAL_TIME
+    timeEnd = std::chrono::steady_clock::now();
+    neighbor_construct += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
+    std::cout << "neighbor_construct: " << neighbor_construct << " milliseconds\n";
+    timeBegin = std::chrono::steady_clock::now();
+    #endif
+
     cluster_label = dbscan.cluster(neighbor);
+
+    #ifdef CAL_TIME
+    timeEnd = std::chrono::steady_clock::now();
+    cluster_construct += std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeBegin).count();
+    std::cout << "cluster_construct: " << cluster_construct << " milliseconds\n";
+    timeBegin = std::chrono::steady_clock::now();
+    #endif
 
     #ifdef CAL_TIME
     clock_gettime(CLOCK_MONOTONIC, &end);
@@ -115,7 +140,7 @@ int main(int argc, char** argv) {
     printf("%f second\n", time_used);
     #endif
 
-    dbscan.print_cluster();
+    // dbscan.print_cluster();
     
     int* color = dbscan.get_colors();
     for (int i = 0; i < height * width; i++) {
