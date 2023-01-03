@@ -1,1 +1,2 @@
 ./image_seg 20 30 testcases/cat.png testcases/cat.out.png
+srun -N1 -n1 --gres=gpu:1 ./image_seg 20 30 testcases/3.png testcases/3.out.png
