@@ -18,7 +18,7 @@ __global__ void bfs(int *edge, int *edge_pos, int *degree, bool *is_core, bool *
         cluster_label[tid] = cluster_id;
         __syncthreads();
         for (int i = edge_pos[tid]; i < edge_pos[tid] + degree[tid]; i++) {
-            if (!cluster_label[edge[i]] != -1) {
+            if (cluster_label[edge[i]] == -1) {
                 frontier[edge[i]] = true;
                 *done = false;
             }
